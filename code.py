@@ -7,7 +7,7 @@ import urequests
 
 wifi = network.WLAN(network.STA_IF)
 wifi.active(True)
-wifi.connect("KidzBop", "9886341045")
+wifi.connect("KidzBop", "-------")
 while not wifi.isconnected():
     pass
 print(wifi.ifconfig())
@@ -30,6 +30,17 @@ async def index(request):
 async def end_stop(request):
     global MODE
     MODE = "CLOCK"
+    return "OK"
+
+@app.route("/arcade")
+async def arcade(request):
+    global sessions, MODE
+    sessions = urequests.get("https://hackhour.hackclub.com/api/session/U03NJ5A39B7", headers={
+        'authorization': 'Bearer --------'
+    })
+    sessions = sessions.json()
+    print(sessions)
+    MODE = "ARCADE"
     return "OK"
 
 def main():
@@ -96,7 +107,7 @@ class LED_8SEG():
 LED = LED_8SEG()
 
 def u_clock():
-    global STOPW_T, MODE, DOWN, arcTime, arcDown
+    global STOPW_T, MODE, DOWN, arcTime, arcDown, checkPaused
     print("Starting clock")
     while 1:
         print(MODE)
@@ -154,63 +165,110 @@ def u_clock():
                     LED.write_cmd(KILOBIT,0x3F)
         
         elif MODE == "ARCADE":
-            sessions = urequests.get("https://hackhour.hackclub.com/api/session/U03NJ5A39B7", headers={
-            "Authorization": "Bearer -----"
-            })
-            print(sessions.status_code)
-            sessions = sessions.json()
+            global sessions
             if sessions['data']:
-                sessMins = int(sessions['data']['endTime'].split("T")[1].split(":")[1])
-                timern = time.localtime()
-                minsLeft = sessMins - timern[4] - 1
-                secsLeft = 60 - timern[5]
-                minsLeft, secsLeft = str(minsLeft), str(secsLeft)
-                if len(minsLeft) < 2: minsLeft = "0" + minsLeft
-                if len(secsLeft) < 2: secsLeft = "0" + secsLeft
-                
-                arcTime = [int(minsLeft[0]), int(minsLeft[1]), int(secsLeft[0]), int(secsLeft[1])]
-                timern = time.localtime()[5]
-                while arcTime[0] > 0 and arcTime[1] > 0 and arcTime[2] > 0 and arcTime[3] > 0:
-                    LED.write_cmd(UNITS, LED.SEG8(arcTime[3]))
-                    LED.write_cmd(TENS, LED.SEG8(arcTime[2]))
-                    LED.write_cmd(HUNDREDS, LED.SEG8(arcTime[1]))
-                    LED.write_cmd(KILOBIT, LED.SEG8(arcTime[0]))
+                if sum(arcTime) == 0:
+                    sessMins = int(sessions['data']['endTime'].split("T")[1].split(":")[1])
+                    timern = time.localtime()
+                    minsLeft = sessMins - timern[4] - 1
+                    if minsLeft < 0: minsLeft += 60
+                    secsLeft = 60 - timern[5]
+                    minsLeft, secsLeft = str(minsLeft), str(secsLeft)
+                    if len(minsLeft) < 2: minsLeft = "0" + minsLeft
+                    if len(secsLeft) < 2: secsLeft = "0" + secsLeft
+                    
+                    #print(minsLeft, secsLeft, sessMins)
+                    
+                    arcTime = [int(minsLeft[0]), int(minsLeft[1]), int(secsLeft[0]), int(secsLeft[1])]
+
+                while sum(arcTime) > 0:
+                    LED.write_cmd(UNITS, LED.SEG8[arcTime[3]])
+                    LED.write_cmd(TENS, LED.SEG8[arcTime[2]])
+                    LED.write_cmd(HUNDREDS, LED.SEG8[arcTime[1]]|Dot)
+                    LED.write_cmd(KILOBIT, LED.SEG8[arcTime[0]])
+                    if not checkPaused:
+                        print("checking paused")
+                        checkPaused = True
+                        tim2 = machine.Timer(-1)
+                        tim2.init(mode=machine.Timer.ONE_SHOT, period=10000, callback=lambda b: urequests.get("http://192.168.40.131/arcade"))
+                        
                     if not arcDown:
-                            arcDown = True
-                            tim = machine.Timer(-1)
-                            tim.init(mode=machine.Timer.ONE_SHOT, period=1000, callback=arcDec)
+                        #print("starting timer")
+                        arcDown = True
+                        tim = machine.Timer(-1)
+                        tim.init(mode=machine.Timer.ONE_SHOT, period=1000, callback=arcDec)
 
 arcTime = [0, 0, 0, 0]
-arcDown = False
-def decArc():
-    if arcTime[2] == 0 and arcTime[3] == 0 and arcTime[0] + arcTime[1] > 0:
-        if arcTime[1] == 0:
-            arcTime[0] -= 1
-            arcTime[1] = 9
-        else:
-            arcTime[1] -= 1
+
+def checkPausedFunc(t):
+    global checkPaused, paused, sessions
+    sessions = urequests.get("https://hackhour.hackclub.com/api/session/U03NJ5A39B7", headers={
+        'authorization': 'Bearer -------'
+    })
+    sessions = sessions.json()
+    print("CHECK PAUSED", sessions)
+    if sessions['data']['paused']: paused = True
+    checkPaused = False
+
+def arcDec(t):
+    global arcDown, arcTime, paused, sessions
+    #print("arcDec callback")
     
-    elif sum(arcTime) > 0:
-        if arcTime[3] == 0 and arcTime[2] > 0:
-            arcTime[2] -= 1
-            arcTime[3] = 9
-            
-        elif arcTime[3] > 0:
-            arcTime[3] -= 1
-            
+    if not paused:
+        if arcTime[2] == 0 and arcTime[3] == 0 and arcTime[0] + arcTime[1] == 1:
+            if arcTime[1] == 0:
+                arcTime[0] -= 1
+                arcTime[1] = 9
+            else:
+                arcTime[1] -= 1
+        
+        elif arcTime[2] + arcTime[3] == 0 and arcTime[0] + arcTime[1] > 1:
+            if arcTime[1] > 0:
+                arcTime[1] -= 1
+                arcTime[2] = 5
+                arcTime[3] = 9
+                
+            elif arcTime[0] > 0 and arcTime[1] == 0:
+                arcTime[0] -= 1
+                arcTime[1] = 9
+                arcTime[2] = 5
+                arcTime[3] = 9
+        
+        elif sum(arcTime) > 0:
+            if arcTime[3] == 0 and arcTime[2] > 0:
+                arcTime[2] -= 1
+                arcTime[3] = 9
+                
+            elif arcTime[3] > 0:
+                arcTime[3] -= 1
+        
+        #print("ARCTIME", arcTime)
+    
+    else:
+        sessMins = int(sessions['data']['endTime'].split("T")[1].split(":")[1])
+        timern = time.localtime()
+        minsLeft = sessMins - timern[4] - 1
+        if minsLeft < 0: minsLeft += 60
+        secsLeft = 60 - timern[5]
+        minsLeft, secsLeft = str(minsLeft), str(secsLeft)
+        if len(minsLeft) < 2: minsLeft = "0" + minsLeft
+        if len(secsLeft) < 2: secsLeft = "0" + secsLeft
+        
+        #print(minsLeft, secsLeft, sessMins)
+        
+        arcTime = [int(minsLeft[0]), int(minsLeft[1]), int(secsLeft[0]), int(secsLeft[1])]
+                    
     arcDown = False
         
 
 if __name__=='__main__':
-    sessions = urequests.get("https://hackhour.hackclub.com/api/session/U03NJ5A39B7", headers={
-        'authorization': 'Bearer -----'
-    })
-    print(sessions.status_code)
-    sessions = sessions.json()
-        
-    global MODE, STOPW_T, DOWN
-    MODE = "ARCADE"
+    MODE = "CLOCK"
     STOPW_T = 0
     DOWN = False
+    sessions = None
+    arcDown = False
+    checkPaused = False
+    paused = False
+    
     t = _thread.start_new_thread(u_clock, ())
     main()
