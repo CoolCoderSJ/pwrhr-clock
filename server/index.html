@@ -1,0 +1,46 @@
+<!DOCTYPE html> 
+<html>
+    <head>
+        <title>Clock</title>
+        <link rel="stylesheet" type="text/css" href="https://simplist.shuchir.dev/simplist.css">
+        <link rel="stylesheet" href="https://use.typekit.net/ghg3vir.css">
+        <link rel="stylesheet" type="text/css" href="style.css">
+        <script type="module" src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.esm.js"></script>
+        <script nomodule src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.js"></script>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <script src="script.js"></script>
+    </head>
+    <body>
+        <h1>Clock Mode</h1>
+        <button id="clock">Switch Display to Clock Mode</button>
+        <br><br>
+        
+        <h1>Timer Mode</h1>
+        <form>
+            <div class="flex">
+                <input type="number" id="timer_m" placeholder="mins">
+                <p>:</p>
+                <input type="number" id="timer_s" placeholder="secs">
+            </div>
+            <button type="button" id="timer">Start Timer</button>
+            <div class="flex">
+                <button id="pause-timer" class="secondary" type="button"><ion-icon size="large" name="pause-circle-outline"></ion-icon></button>
+                <button id="unpause-timer" class="secondary" type="button"><ion-icon size="large" name="play-circle-outline"></ion-icon></button>
+            </div>
+        </form>
+
+        <br><br>
+        <h1>Stopwatch Mode</h1>
+        <form>
+            <button type="button" id="stopwatch">Start Stopwatch</button>
+            <div class="flex">
+                <button id="pause-stopwatch" class="secondary" type="button"><ion-icon size="large" name="pause-circle-outline"></ion-icon></button>
+                <button id="unpause-stopwatch" class="secondary" type="button"><ion-icon size="large" name="play-circle-outline"></ion-icon></button>
+            </div>
+        </form>
+
+        <br><br>
+        <h1>Arcade</h1>
+        <button id="arcade">Switch Display to Arcade Mode</button>
+    </body>
+</html>

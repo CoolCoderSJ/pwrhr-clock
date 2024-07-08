@@ -9,7 +9,7 @@ import gc
 wifi = network.WLAN(network.STA_IF)
 wifi.config(pm = 0x111022)
 wifi.active(True)
-wifi.connect("KidzBop", "--------")
+wifi.connect("KidzBop", "--------------")
 while not wifi.isconnected():
     pass
 print(wifi.ifconfig())
@@ -19,9 +19,9 @@ import _thread
 import socket
 
 def decrement(t):
-    global STOPW_T, DOWN
+    global TIMER_T, DOWN, timerPaused
     print("minus 1")
-    STOPW_T -= 1
+    if not timerPaused: TIMER_T -= 1
     DOWN = False
 
 MOSI = 11
@@ -79,7 +79,7 @@ class LED_8SEG():
 LED = LED_8SEG()
 
 def u_clock():
-    global STOPW_T, MODE, DOWN, arcTime, arcDown, checkPaused
+    global TIMER_T, MODE, DOWN, STOPW_T, arcTime, arcDown, stopPaused, lasttick
     print("Starting clock")
     while 1:
         gc.collect()
@@ -109,16 +109,34 @@ def u_clock():
             LED.write_cmd(TENS,LED.SEG8[min1])
             LED.write_cmd(HUNDREDS,LED.SEG8[hr2]|Dot)
             LED.write_cmd(KILOBIT,LED.SEG8[hr1])
-        elif MODE == "STOPWATCH":
-            if STOPW_T > 0:
-                timern = str(STOPW_T - 1)
-                if len(timern) < 4:
-                    timern = ((4-len(timern)) * "0") + timern
+        elif MODE == "TIMER":
+            if TIMER_T > 0:
+                rn = TIMER_T - 1
+                mins = str(rn // 60)
+                secs = str(rn - int(mins) * 60)
                 
-                LED.write_cmd(UNITS,LED.SEG8[int(timern[3])])
-                LED.write_cmd(TENS,LED.SEG8[int(timern[2])])
-                LED.write_cmd(HUNDREDS,LED.SEG8[int(timern[1])])
-                LED.write_cmd(KILOBIT,LED.SEG8[int(timern[0])])
+                if len(mins) < 2: mins = "0" + mins
+                if len(secs) < 2: secs = "0" + secs
+                
+                timern = f"{mins}{secs}"
+                
+                if not timerPaused:
+                    LED.write_cmd(UNITS,LED.SEG8[int(timern[3])])
+                    LED.write_cmd(TENS,LED.SEG8[int(timern[2])])
+                    LED.write_cmd(HUNDREDS,LED.SEG8[int(timern[1])]|Dot)
+                    LED.write_cmd(KILOBIT,LED.SEG8[int(timern[0])])
+                else:
+                    LED.write_cmd(UNITS,0x00)
+                    LED.write_cmd(TENS,0x00)
+                    LED.write_cmd(HUNDREDS,0x00)
+                    LED.write_cmd(KILOBIT,0x00)
+                    time.sleep(1)
+                    rnTicks = time.ticks_ms()
+                    while time.ticks_diff(time.ticks_ms(), rnTicks) < 1000:
+                        LED.write_cmd(UNITS,LED.SEG8[int(timern[3])])
+                        LED.write_cmd(TENS,LED.SEG8[int(timern[2])])
+                        LED.write_cmd(HUNDREDS,LED.SEG8[int(timern[1])]|Dot)
+                        LED.write_cmd(KILOBIT,LED.SEG8[int(timern[0])])
                 
                 if not DOWN:
                     DOWN = True
@@ -137,6 +155,38 @@ def u_clock():
                     LED.write_cmd(HUNDREDS,0x3F)
                     LED.write_cmd(KILOBIT,0x3F)
         
+        elif MODE == "STOPWATCH":
+            if not lasttick:
+                lasttick = time.ticks_ms()
+            
+            if time.ticks_diff(time.ticks_ms(), lasttick) >= 1000:
+                if not stopPaused: STOPW_T += 1
+                lasttick = time.ticks_ms()
+            
+            mins = str(STOPW_T // 60)
+            secs = str(STOPW_T - int(mins)*60)
+            if len(mins) < 2: mins = "0" + mins
+            if len(secs) < 2: secs = "0" + secs
+            stopStr = f"{mins}{secs}"
+            
+            if not stopPaused:
+                LED.write_cmd(UNITS,LED.SEG8[int(stopStr[3])])
+                LED.write_cmd(TENS,LED.SEG8[int(stopStr[2])])
+                LED.write_cmd(HUNDREDS,LED.SEG8[int(stopStr[1])]|Dot)
+                LED.write_cmd(KILOBIT,LED.SEG8[int(stopStr[0])])
+            else:
+                LED.write_cmd(UNITS,0x00)
+                LED.write_cmd(TENS,0x00)
+                LED.write_cmd(HUNDREDS,0x00)
+                LED.write_cmd(KILOBIT,0x00)
+                time.sleep(1)
+                timern = time.ticks_ms()
+                while time.ticks_diff(time.ticks_ms(), timern) < 1000:
+                    LED.write_cmd(UNITS,LED.SEG8[int(stopStr[3])])
+                    LED.write_cmd(TENS,LED.SEG8[int(stopStr[2])])
+                    LED.write_cmd(HUNDREDS,LED.SEG8[int(stopStr[1])]|Dot)
+                    LED.write_cmd(KILOBIT,LED.SEG8[int(stopStr[0])])    
+                
         elif MODE == "ARCADE":
             global sessions
             if sessions['data']:
@@ -154,7 +204,7 @@ def u_clock():
                     
                     arcTime = [int(minsLeft[0]), int(minsLeft[1]), int(secsLeft[0]), int(secsLeft[1])]
 
-                while sum(arcTime) > 0:
+                while sum(arcTime) > 0 and MODE == "ARCADE":
                     LED.write_cmd(UNITS, LED.SEG8[arcTime[3]])
                     LED.write_cmd(TENS, LED.SEG8[arcTime[2]])
                     LED.write_cmd(HUNDREDS, LED.SEG8[arcTime[1]]|Dot)
@@ -222,13 +272,16 @@ def arcDec(t):
 
 if __name__=='__main__':
     MODE = "CLOCK"
+    TIMER_T = 0
     STOPW_T = 0
     DOWN = False
     sessions = None
     arcDown = False
-    checkPaused = False
     paused = False
     lastTen = None
+    lasttick = None
+    stopPaused = False
+    timerPaused = False
     
     t = _thread.start_new_thread(u_clock, ())
 
@@ -251,7 +304,7 @@ if __name__=='__main__':
             print("GETTING DATA")
             if MODE == "ARCADE":
                 sr = requests.get("https://hackhour.hackclub.com/api/session/U03NJ5A39B7", headers={
-                    'authorization': 'Bearer -------'
+                    'authorization': 'Bearer -----------'
                 })
                 sessions = sr.json()
                 sr.close()
@@ -287,17 +340,35 @@ if __name__=='__main__':
             path = request.split("?")[0]
             args = request.split("?")[1] if "?" in request else ""
             
-            if path == '/stopwatch':
+            if path == '/timer':
                 t = args.split("=")[1]
-                STOPW_T = int(t) + 1
-                MODE = "STOPWATCH"
+                TIMER_T = int(t) + 1
+                timerPaused = False
+                MODE = "TIMER"
             
             if path == "/clock":
                 MODE = "CLOCK"
             
+            if path == "/stopwatch":
+                STOPW_T = 0
+                stopPaused = False
+                MODE = "STOPWATCH"
+            
+            if path == "/stopwatch/pause":
+                stopPaused = True
+            
+            if path == "/stopwatch/unpause":
+                stopPaused = False
+                
+            if path == "/timer/pause":
+                timerPaused = True
+            
+            if path == "/timer/unpause":
+                timerPaused = False
+            
             if path == "/arcade":
                 sr = requests.get("https://hackhour.hackclub.com/api/session/U03NJ5A39B7", headers={
-                    'authorization': 'Bearer -------'
+                    'authorization': 'Bearer -----------'
                 })
                 sessions = sr.json()
                 sr.close()
@@ -311,5 +382,7 @@ if __name__=='__main__':
         except OSError as e:
             if e.args[0] == 110: # Timeout error code
                 print('Timeout occurred')
-            conn.close()
+            try: conn.close()
+            except NameError: pass
             print('Connection closed')
+
