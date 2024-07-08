@@ -4,11 +4,12 @@ import time
 import machine
 import network
 import requests
+import gc
 
 wifi = network.WLAN(network.STA_IF)
 wifi.config(pm = 0x111022)
 wifi.active(True)
-wifi.connect("KidzBop", "------")
+wifi.connect("KidzBop", "--------")
 while not wifi.isconnected():
     pass
 print(wifi.ifconfig())
@@ -78,12 +79,11 @@ class LED_8SEG():
 LED = LED_8SEG()
 
 def u_clock():
-    global STOPW_T, MODE, DOWN, arcTime, arcDown, checkPaused, sessions
-    import time
+    global STOPW_T, MODE, DOWN, arcTime, arcDown, checkPaused
     print("Starting clock")
-    lastTen = None
-    
     while 1:
+        gc.collect()
+        
         if MODE == "CLOCK":
             rn = time.localtime()
             mins = str(rn[4])
@@ -138,6 +138,7 @@ def u_clock():
                     LED.write_cmd(KILOBIT,0x3F)
         
         elif MODE == "ARCADE":
+            global sessions
             if sessions['data']:
                 if sum(arcTime) == 0:
                     sessMins = int(sessions['data']['endTime'].split("T")[1].split(":")[1])
@@ -163,21 +164,21 @@ def u_clock():
                         arcDown = True
                         tim = machine.Timer(-1)
                         tim.init(mode=machine.Timer.ONE_SHOT, period=1000, callback=arcDec)
+                
+                while MODE == "ARCADE":
+                    LED.write_cmd(UNITS,0x00)
+                    LED.write_cmd(TENS,0x00)
+                    LED.write_cmd(HUNDREDS,0x00)
+                    LED.write_cmd(KILOBIT,0x00)
+                    time.sleep(1)
+                    timern = time.localtime()[5]
+                    while time.localtime()[5] - timern < 1:
+                        LED.write_cmd(UNITS,0x3F)
+                        LED.write_cmd(TENS,0x3F)
+                        LED.write_cmd(HUNDREDS,0x3F)
+                        LED.write_cmd(KILOBIT,0x3F)
                         
-                    if not lastTen:
-                        lastTen = time.ticks_ms()
-                    if time.ticks_diff(time.ticks_ms(), lastTen) > 10000:
-                        print("GETTING DATA")
-                        sr = requests.get("https://hackhour.hackclub.com/api/session/U03NJ5A39B7", headers={
-                            'authorization': 'Bearer ------'
-                        })
-                        sessions = sr.json()
-                        sr.close()
-                        if sessions['data']['paused']: paused = True
-                        lastTen = time.ticks_ms()
-                    else:
-                        print(time.ticks_diff(time.ticks_ms(), lastTen))
-                                
+
 
 arcTime = [0, 0, 0, 0]
 
@@ -215,35 +216,59 @@ def arcDec(t):
                 arcTime[3] -= 1
         
         #print("ARCTIME", arcTime)
-    
-    else:
-        sessMins = int(sessions['data']['endTime'].split("T")[1].split(":")[1])
-        timern = time.localtime()
-        minsLeft = sessMins - timern[4] - 1
-        if minsLeft < 0: minsLeft += 60
-        secsLeft = 60 - timern[5]
-        minsLeft, secsLeft = str(minsLeft), str(secsLeft)
-        if len(minsLeft) < 2: minsLeft = "0" + minsLeft
-        if len(secsLeft) < 2: secsLeft = "0" + secsLeft
-        
-        #print(minsLeft, secsLeft, sessMins)
-        
-        arcTime = [int(minsLeft[0]), int(minsLeft[1]), int(secsLeft[0]), int(secsLeft[1])]
-                    
+         
     arcDown = False
+        
 
-def handle_server():
-    import socket
+if __name__=='__main__':
+    MODE = "CLOCK"
+    STOPW_T = 0
+    DOWN = False
+    sessions = None
+    arcDown = False
+    checkPaused = False
+    paused = False
+    lastTen = None
+    
+    t = _thread.start_new_thread(u_clock, ())
+
     
     addr = socket.getaddrinfo('0.0.0.0', 80)[0][-1]
     s = socket.socket()
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     s.bind(addr)
     s.listen()
+    s.settimeout(5)
     
     print('Listening on', addr)
 
     while True:
+        gc.collect()
+        
+        if not lastTen:
+            lastTen = time.ticks_ms()
+        if time.ticks_diff(time.ticks_ms(), lastTen) > 10000:
+            print("GETTING DATA")
+            if MODE == "ARCADE":
+                sr = requests.get("https://hackhour.hackclub.com/api/session/U03NJ5A39B7", headers={
+                    'authorization': 'Bearer -------'
+                })
+                sessions = sr.json()
+                sr.close()
+                print(sessions)
+                
+                if sessions['data']['paused']:
+                    paused = True
+                else:
+                    sesStr = str(sessions['data']['remaining'])
+                    if len(sesStr) < 2: sesStr = "0" + sesStr
+                    arcTime = [int(sesStr[0]), int(sesStr[1]), 0, 0]
+                    paused = False
+                    
+            lastTen = time.ticks_ms()
+        else:
+            print(time.ticks_diff(time.ticks_ms(), lastTen))
+        
         try:
             conn, addr = s.accept()
             print('Got a connection from', addr)
@@ -284,18 +309,7 @@ def handle_server():
             conn.close()
 
         except OSError as e:
+            if e.args[0] == 110: # Timeout error code
+                print('Timeout occurred')
             conn.close()
             print('Connection closed')
-
-
-if __name__=='__main__':
-    MODE = "CLOCK"
-    STOPW_T = 0
-    DOWN = False
-    sessions = None
-    arcDown = False
-    checkPaused = False
-    paused = False
-    
-    t = _thread.start_new_thread(handle_server, ())
-    u_clock()
