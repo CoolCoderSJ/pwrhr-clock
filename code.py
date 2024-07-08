@@ -3,11 +3,12 @@ import framebuf
 import time
 import machine
 import network
-import urequests
+import requests
 
 wifi = network.WLAN(network.STA_IF)
+wifi.config(pm = 0x111022)
 wifi.active(True)
-wifi.connect("KidzBop", "-------")
+wifi.connect("KidzBop", "------")
 while not wifi.isconnected():
     pass
 print(wifi.ifconfig())
@@ -35,10 +36,11 @@ async def end_stop(request):
 @app.route("/arcade")
 async def arcade(request):
     global sessions, MODE
-    sessions = urequests.get("https://hackhour.hackclub.com/api/session/U03NJ5A39B7", headers={
-        'authorization': 'Bearer --------'
+    sr = requests.get("https://hackhour.hackclub.com/api/session/U03NJ5A39B7", headers={
+        'authorization': 'Bearer ------'
     })
-    sessions = sessions.json()
+    sessions = sr.json()
+    sr.close()
     print(sessions)
     MODE = "ARCADE"
     return "OK"
@@ -186,26 +188,34 @@ def u_clock():
                     LED.write_cmd(TENS, LED.SEG8[arcTime[2]])
                     LED.write_cmd(HUNDREDS, LED.SEG8[arcTime[1]]|Dot)
                     LED.write_cmd(KILOBIT, LED.SEG8[arcTime[0]])
-                    if not checkPaused:
-                        print("checking paused")
-                        checkPaused = True
-                        tim2 = machine.Timer(-1)
-                        tim2.init(mode=machine.Timer.ONE_SHOT, period=10000, callback=lambda b: urequests.get("http://192.168.40.131/arcade"))
-                        
                     if not arcDown:
                         #print("starting timer")
                         arcDown = True
                         tim = machine.Timer(-1)
                         tim.init(mode=machine.Timer.ONE_SHOT, period=1000, callback=arcDec)
+                        
+                    if not checkPaused:
+                        print("checking paused")
+                        checkPaused = True
+                        tim2 = machine.Timer(-1)
+                        tim2.init(mode=machine.Timer.ONE_SHOT, period=10000, callback=checkPausedFunc)
+                        
 
 arcTime = [0, 0, 0, 0]
 
 def checkPausedFunc(t):
-    global checkPaused, paused, sessions
-    sessions = urequests.get("https://hackhour.hackclub.com/api/session/U03NJ5A39B7", headers={
-        'authorization': 'Bearer -------'
+    global checkPaused, paused, sessions, wifi
+    wifi.active(True)
+    wifi.connect("KidzBop", "-------")
+    while not wifi.isconnected():
+        pass
+    print(wifi.ifconfig())
+
+    if wifi.isconnected(): sr = requests.get("https://hackhour.hackclub.com/api/session/U03NJ5A39B7", headers={
+        'authorization': 'Bearer -----'
     })
-    sessions = sessions.json()
+    sessions = sr.json()
+    sr.close()
     print("CHECK PAUSED", sessions)
     if sessions['data']['paused']: paused = True
     checkPaused = False
