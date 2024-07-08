@@ -15,38 +15,7 @@ print(wifi.ifconfig())
     
 import asyncio
 import _thread
-from microdot import Microdot
-
-app = Microdot()
-
-@app.route('/stopwatch')
-async def index(request):
-    global STOPW_T, MODE
-    t = request.args.get("t")
-    STOPW_T = int(t) + 1
-    MODE = "STOPWATCH"
-    return 'OK'
-
-@app.route('/end_stop')
-async def end_stop(request):
-    global MODE
-    MODE = "CLOCK"
-    return "OK"
-
-@app.route("/arcade")
-async def arcade(request):
-    global sessions, MODE
-    sr = requests.get("https://hackhour.hackclub.com/api/session/U03NJ5A39B7", headers={
-        'authorization': 'Bearer ------'
-    })
-    sessions = sr.json()
-    sr.close()
-    print(sessions)
-    MODE = "ARCADE"
-    return "OK"
-
-def main():
-    app.run(port=80, debug=True)
+import socket
 
 def decrement(t):
     global STOPW_T, DOWN
@@ -109,10 +78,12 @@ class LED_8SEG():
 LED = LED_8SEG()
 
 def u_clock():
-    global STOPW_T, MODE, DOWN, arcTime, arcDown, checkPaused
+    global STOPW_T, MODE, DOWN, arcTime, arcDown, checkPaused, sessions
+    import time
     print("Starting clock")
+    lastTen = None
+    
     while 1:
-        print(MODE)
         if MODE == "CLOCK":
             rn = time.localtime()
             mins = str(rn[4])
@@ -167,7 +138,6 @@ def u_clock():
                     LED.write_cmd(KILOBIT,0x3F)
         
         elif MODE == "ARCADE":
-            global sessions
             if sessions['data']:
                 if sum(arcTime) == 0:
                     sessMins = int(sessions['data']['endTime'].split("T")[1].split(":")[1])
@@ -194,31 +164,23 @@ def u_clock():
                         tim = machine.Timer(-1)
                         tim.init(mode=machine.Timer.ONE_SHOT, period=1000, callback=arcDec)
                         
-                    if not checkPaused:
-                        print("checking paused")
-                        checkPaused = True
-                        tim2 = machine.Timer(-1)
-                        tim2.init(mode=machine.Timer.ONE_SHOT, period=10000, callback=checkPausedFunc)
-                        
+                    if not lastTen:
+                        lastTen = time.ticks_ms()
+                    if time.ticks_diff(time.ticks_ms(), lastTen) > 10000:
+                        print("GETTING DATA")
+                        sr = requests.get("https://hackhour.hackclub.com/api/session/U03NJ5A39B7", headers={
+                            'authorization': 'Bearer ------'
+                        })
+                        sessions = sr.json()
+                        sr.close()
+                        if sessions['data']['paused']: paused = True
+                        lastTen = time.ticks_ms()
+                    else:
+                        print(time.ticks_diff(time.ticks_ms(), lastTen))
+                                
 
 arcTime = [0, 0, 0, 0]
 
-def checkPausedFunc(t):
-    global checkPaused, paused, sessions, wifi
-    wifi.active(True)
-    wifi.connect("KidzBop", "-------")
-    while not wifi.isconnected():
-        pass
-    print(wifi.ifconfig())
-
-    if wifi.isconnected(): sr = requests.get("https://hackhour.hackclub.com/api/session/U03NJ5A39B7", headers={
-        'authorization': 'Bearer -----'
-    })
-    sessions = sr.json()
-    sr.close()
-    print("CHECK PAUSED", sessions)
-    if sessions['data']['paused']: paused = True
-    checkPaused = False
 
 def arcDec(t):
     global arcDown, arcTime, paused, sessions
@@ -269,7 +231,62 @@ def arcDec(t):
         arcTime = [int(minsLeft[0]), int(minsLeft[1]), int(secsLeft[0]), int(secsLeft[1])]
                     
     arcDown = False
-        
+
+def handle_server():
+    import socket
+    
+    addr = socket.getaddrinfo('0.0.0.0', 80)[0][-1]
+    s = socket.socket()
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    s.bind(addr)
+    s.listen()
+    
+    print('Listening on', addr)
+
+    while True:
+        try:
+            conn, addr = s.accept()
+            print('Got a connection from', addr)
+            
+            # Receive and parse the request
+            request = conn.recv(1024)
+            request = str(request)
+            print('Request content = %s' % request)
+
+            try:
+                request = request.split()[1]
+                print('Request:', request)
+            except IndexError:
+                pass
+            
+            path = request.split("?")[0]
+            args = request.split("?")[1] if "?" in request else ""
+            
+            if path == '/stopwatch':
+                t = args.split("=")[1]
+                STOPW_T = int(t) + 1
+                MODE = "STOPWATCH"
+            
+            if path == "/clock":
+                MODE = "CLOCK"
+            
+            if path == "/arcade":
+                sr = requests.get("https://hackhour.hackclub.com/api/session/U03NJ5A39B7", headers={
+                    'authorization': 'Bearer -------'
+                })
+                sessions = sr.json()
+                sr.close()
+                print(sessions)
+                MODE = "ARCADE"
+            
+            # Send the HTTP response and close the connection
+            conn.send('HTTP/1.0 200 OK\r\nContent-type: text/plain\r\n\r\n')
+            conn.close()
+
+        except OSError as e:
+            conn.close()
+            print('Connection closed')
+
 
 if __name__=='__main__':
     MODE = "CLOCK"
@@ -280,5 +297,5 @@ if __name__=='__main__':
     checkPaused = False
     paused = False
     
-    t = _thread.start_new_thread(u_clock, ())
-    main()
+    t = _thread.start_new_thread(handle_server, ())
+    u_clock()
