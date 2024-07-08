@@ -2,7 +2,7 @@ window.onload = () => {
     let $ = document.querySelector.bind(document);
 
     $("#clock").addEventListener("click", () => {
-        fetch("http://192.168.40.131/clock", {
+        fetch("/proxy/clock", {
             mode: "no-cors"
         })
     })
@@ -10,43 +10,43 @@ window.onload = () => {
     $("#timer").addEventListener("click", () => {
         let secs = Number($("#timer_m").value) * 60 + Number($("#timer_s").value);
         console.log(secs)
-        fetch(`http://192.168.40.131/timer?t=${secs}`, {
+        fetch(`/proxy/timer/t=${secs}`, {
             mode: "no-cors"
         })
     })
 
     $("#pause-timer").addEventListener("click", () => {
-        fetch("http://192.168.40.131/timer/pause", {
+        fetch("/proxy/timer/pause", {
             mode: "no-cors"
         })
     })
 
     $("#unpause-timer").addEventListener("click", () => {
-        fetch("http://192.168.40.131/timer/unpause", {
+        fetch("/proxy/timer/unpause", {
             mode: "no-cors"
         })
     })
 
     $("#stopwatch").addEventListener("click", () => {
-        fetch("http://192.168.40.131/stopwatch", {
+        fetch("/proxy/stopwatch", {
             mode: "no-cors"
         })
     })
 
     $("#pause-stopwatch").addEventListener("click", () => {
-        fetch("http://192.168.40.131/stopwatch/pause", {
+        fetch("/proxy/stopwatch/pause", {
             mode: "no-cors"
         })
     })
 
     $("#unpause-stopwatch").addEventListener("click", () => {
-        fetch("http://192.168.40.131/stopwatch/unpause", {
+        fetch("/proxy/stopwatch/unpause", {
             mode: "no-cors"
         })
     })
 
     $("#arcade").addEventListener("click", () => {
-        fetch("http://192.168.40.131/arcade", {
+        fetch("/proxy/arcade", {
             mode: "no-cors"
         })
     })
